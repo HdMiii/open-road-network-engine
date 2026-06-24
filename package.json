@@ -1,0 +1,90 @@
+{
+  "name": "open-road-network-engine",
+  "version": "0.1.0-alpha",
+  "type": "module",
+  "description": "Canonical road-network graph construction and centrality engine.",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./core": {
+      "types": "./dist/packages/core/src/index.d.ts",
+      "import": "./dist/packages/core/src/index.js"
+    },
+    "./canonicalize": {
+      "types": "./dist/packages/canonicalize/src/index.d.ts",
+      "import": "./dist/packages/canonicalize/src/index.js"
+    },
+    "./centrality": {
+      "types": "./dist/packages/centrality/src/index.d.ts",
+      "import": "./dist/packages/centrality/src/index.js"
+    },
+    "./io": {
+      "types": "./dist/packages/io/src/index.d.ts",
+      "import": "./dist/packages/io/src/index.js"
+    },
+    "./shortest-path": {
+      "types": "./dist/packages/shortest-path/src/index.d.ts",
+      "import": "./dist/packages/shortest-path/src/index.js"
+    },
+    "./shortest-path/route": {
+      "types": "./dist/packages/shortest-path/src/route.d.ts",
+      "import": "./dist/packages/shortest-path/src/route.js"
+    },
+    "./validation/depthmapx": {
+      "types": "./dist/packages/validation/src/depthmapx.d.ts",
+      "import": "./dist/packages/validation/src/depthmapx.js"
+    },
+    "./validation/cityseer": {
+      "types": "./dist/packages/validation/src/cityseer.d.ts",
+      "import": "./dist/packages/validation/src/cityseer.js"
+    },
+    "./website-adapter": {
+      "types": "./dist/packages/website-adapter/src/index.d.ts",
+      "import": "./dist/packages/website-adapter/src/index.js"
+    },
+    "./website-worker": {
+      "types": "./dist/packages/website-adapter/src/worker.d.ts",
+      "import": "./dist/packages/website-adapter/src/worker.js"
+    },
+    "./release": {
+      "types": "./dist/packages/release/src/index.d.ts",
+      "import": "./dist/packages/release/src/index.js"
+    },
+    "./cli": {
+      "types": "./dist/packages/cli/src/index.d.ts",
+      "import": "./dist/packages/cli/src/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "open-road-network-engine": "./dist/packages/cli/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "pretest": "npm run build",
+    "test": "node --test",
+    "release:check": "node packages/cli/src/index.ts release-check",
+    "validate:depthmapx": "node packages/cli/src/index.ts validate-depthmapx",
+    "validate:depthmapx-angular": "node packages/cli/src/index.ts validate-depthmapx-angular",
+    "validate:cityseer": "node packages/cli/src/index.ts validate-cityseer"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "flatgeobuf": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
+  }
+}
