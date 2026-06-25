@@ -13,6 +13,7 @@ import {
   supportsOnDemand
 } from "../packages/website-adapter/src/index.ts";
 import { attachEngineWorker, createEngineWorkerMessageHandler, transferablesForResponse } from "../packages/website-adapter/src/worker.ts";
+import type { CanonicalGraph } from "../packages/core/src/index.ts";
 import { chainGraph, rightAngleGraph, threeSegmentChainGraph } from "./fixtures/tiny-graphs.ts";
 
 test("parses and validates website analysis columns", () => {
@@ -190,13 +191,27 @@ test("session emits progress around fullmap and route jobs", () => {
   }, (message) => progress.push(message));
 
   assert.equal(fullmap.type, "fullmap");
-  assert.deepEqual(progress.map((message) => message.phase), ["started", "completed"]);
-  assert.deepEqual(progress.map((message) => message.operation), ["fullmap", "fullmap"]);
-  assert.equal(progress[0].column, "dmx_angular_choice_r400");
-  assert.equal(progress[0].completed, 0);
-  assert.equal(progress[0].total, 3);
-  assert.equal(progress[1].completed, 3);
-  assert.equal(progress[1].total, 3);
+  // A full map now reports granular per-root progress: a "started" event, one or
+  // more "running" events as roots complete, then a final "completed" event.
+  assert.ok(progress.every((message) => message.operation === "fullmap"));
+  assert.ok(progress.every((message) => message.column === "dmx_angular_choice_r400"));
+  const first = progress[0];
+  const last = progress[progress.length - 1];
+  assert.equal(first.phase, "started");
+  assert.equal(first.completed, 0);
+  assert.equal(first.total, 3);
+  assert.equal(last.phase, "completed");
+  assert.equal(last.completed, 3);
+  assert.equal(last.total, 3);
+  const running = progress.slice(1, -1);
+  assert.ok(running.length > 0, "expected at least one running progress event");
+  assert.ok(running.every((message) => message.phase === "running"));
+  // Running progress is strictly monotonic and bounded within (0, total).
+  let previous = 0;
+  for (const message of running) {
+    assert.ok(message.completed > previous && message.completed < message.total);
+    previous = message.completed;
+  }
 
   progress.length = 0;
   const route = session.handleWithProgress({
@@ -293,13 +308,18 @@ test("browser worker wrapper posts responses with transferable output buffers", 
     radius: 400,
     reqId: 12
   });
-  assert.deepEqual(posted.slice(1).map((item) => item.message.type), ["progress", "progress", "fullmap"]);
-  assert.deepEqual(posted[1].transfer, []);
-  assert.deepEqual(posted[2].transfer, []);
-  assert.equal(posted[3].message.type, "fullmap");
-  if (posted[3].message.type === "fullmap") {
-    assert.deepEqual(posted[3].transfer, [posted[3].message.values.buffer]);
-    assert.deepEqual(transferablesForResponse(posted[3].message), [posted[3].message.values.buffer]);
+  // After "ready": a run of "progress" messages (started → running… → completed),
+  // then the transferable "fullmap" response posted last.
+  const afterReady = posted.slice(1);
+  const fullmapPost = afterReady[afterReady.length - 1];
+  const progressPosts = afterReady.slice(0, -1);
+  assert.ok(progressPosts.length >= 2);
+  assert.ok(progressPosts.every((item) => item.message.type === "progress"));
+  assert.ok(progressPosts.every((item) => item.transfer.length === 0));
+  assert.equal(fullmapPost.message.type, "fullmap");
+  if (fullmapPost.message.type === "fullmap") {
+    assert.deepEqual(fullmapPost.transfer, [fullmapPost.message.values.buffer]);
+    assert.deepEqual(transferablesForResponse(fullmapPost.message), [fullmapPost.message.values.buffer]);
   }
 });
 
@@ -327,3 +347,58 @@ function assertFloat32Close(actual: readonly number[], expected: readonly number
     assert.ok(Math.abs(actual[index] - expected[index]) <= epsilon, `index ${index}: ${actual[index]} !== ${expected[index]}`);
   }
 }
+
+function straightChainGraph(segmentCount: number): CanonicalGraph {
+  const segments = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    const x = index * 10;
+    segments.push({
+      segment_id: index,
+      source: index,
+      target: index + 1,
+      length_m: 10,
+      geometry: { type: "LineString" as const, coordinates: [[x, 0], [x + 10, 0]] }
+    });
+  }
+  return { segments };
+}
+
+test("granular progress is monotonic and never changes analysis values", () => {
+  // Large enough that the ~100-step ticker fires several intermediate events.
+  const graph = straightChainGraph(20);
+  const columns = [
+    "dmx_integration_r400",
+    "dmx_choice_r400",
+    "dmx_angular_integration_r400",
+    "dmx_angular_choice_r400",
+    "pst_angular_integration_r400",
+    "pst_angular_choice_r400",
+    "angular_integration_r400",
+    "angular_nain_r400",
+    "angular_choice_r400",
+    "angular_nach_r400"
+  ];
+
+  for (const column of columns) {
+    const parsed = parseAnalysisColumn(column);
+    assert.ok(parsed, `expected ${column} to parse`);
+    if (!parsed) continue;
+
+    const baseline = computeAnalysisColumn(graph, parsed.method, parsed.measure, parsed.radius);
+    const events: Array<{ completed: number; total: number }> = [];
+    const reported = computeAnalysisColumn(graph, parsed.method, parsed.measure, parsed.radius, (completed, total) => {
+      events.push({ completed, total });
+    });
+
+    // Parity: the progress callback is purely additive — values are byte-identical.
+    assert.deepEqual([...reported.values], [...baseline.values], `${column} values changed under progress reporting`);
+
+    // At least one intermediate event, strictly increasing and bounded within (0, total).
+    assert.ok(events.length > 0, `${column} reported no progress`);
+    let previous = 0;
+    for (const { completed, total } of events) {
+      assert.ok(completed > previous && completed < total, `${column} progress not monotonic in-range`);
+      previous = completed;
+    }
+  }
+});

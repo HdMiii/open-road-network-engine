@@ -1,4 +1,4 @@
-import type { CanonicalGraph, CanonicalSegment, CentralityResult } from "../../core/src/index.ts";
+import type { AnalysisProgressCallback, CanonicalGraph, CanonicalSegment, CentralityResult } from "../../core/src/index.ts";
 import {
   depthmapXMetricChoice,
   depthmapXMetricIntegration,
@@ -57,7 +57,7 @@ export interface AnalysisColumnResult {
   };
 }
 
-export type EngineWorkerProgressPhase = "started" | "completed";
+export type EngineWorkerProgressPhase = "started" | "running" | "completed";
 
 export interface EngineWorkerProgressMessage {
   type: "progress";
@@ -340,7 +340,8 @@ export function computeAnalysisColumn(
   graph: CanonicalGraph,
   method: WebsiteMethod,
   measure: WebsiteMeasure,
-  radius?: number
+  radius?: number,
+  onProgress?: AnalysisProgressCallback
 ): AnalysisColumnResult {
   if (!supportsAnalysis(method, measure, radius)) {
     throw new Error(`Unsupported analysis column: ${analysisColumn(method, measure, radius)}`);
@@ -350,13 +351,13 @@ export function computeAnalysisColumn(
   if (method === "dmx") {
     if (radius === undefined) throw new Error("DepthmapX-style analysis requires a radius.");
     result = measure === "choice"
-      ? depthmapXMetricChoice(graph, radius)
-      : depthmapXMetricIntegration(graph, radius);
+      ? depthmapXMetricChoice(graph, radius, onProgress)
+      : depthmapXMetricIntegration(graph, radius, onProgress);
   } else if (method === "dmx_angular") {
     if (radius === undefined) throw new Error("DepthmapX-style angular analysis requires a radius.");
     result = measure === "choice"
-      ? depthmapXTulipAngularChoice(graph, radius)
-      : angularIntegration(graph, radius);
+      ? depthmapXTulipAngularChoice(graph, radius, onProgress)
+      : angularIntegration(graph, radius, 0, onProgress);
   } else if (method === "pst_angular") {
     if (radius === undefined) throw new Error("PST-style angular analysis requires a radius.");
     // The website radius is a metric (network-distance) radius in metres. PST applies this as the
@@ -364,14 +365,14 @@ export function computeAnalysisColumn(
     // must stay unbounded here, otherwise the selected radius would never bind metrically.
     const options = { radii: { walking: radius } };
     result = measure === "choice"
-      ? pstAngularChoice(graph, options)
-      : pstAngularIntegration(graph, options);
+      ? pstAngularChoice(graph, options, onProgress)
+      : pstAngularIntegration(graph, options, onProgress);
   } else if (method === "angular") {
     if (radius === undefined) throw new Error("Angular analysis requires a radius.");
-    if (measure === "integration") result = angularIntegration(graph, radius, 1);
-    else if (measure === "nain") result = angularNain(graph, radius);
-    else if (measure === "choice") result = angularChoice(graph, radius);
-    else if (measure === "nach") result = angularNach(graph, radius);
+    if (measure === "integration") result = angularIntegration(graph, radius, 1, onProgress);
+    else if (measure === "nain") result = angularNain(graph, radius, onProgress);
+    else if (measure === "choice") result = angularChoice(graph, radius, onProgress);
+    else if (measure === "nach") result = angularNach(graph, radius, onProgress);
     else throw new Error(`Unsupported angular measure: ${measure}`);
   } else {
     throw new Error(`${method} analysis has not been extracted into the engine adapter yet.`);
@@ -489,7 +490,23 @@ export class EngineWorkerSession {
           total: this.#graph.segments.length,
           column
         });
-        const result = computeAnalysisColumn(this.#graph, message.method, message.measure, message.radius);
+        const result = computeAnalysisColumn(
+          this.#graph,
+          message.method,
+          message.measure,
+          message.radius,
+          (completed, total) => {
+            emitProgress({
+              type: "progress",
+              reqId: message.reqId,
+              phase: "running",
+              operation: "fullmap",
+              completed,
+              total,
+              column
+            });
+          }
+        );
         emitProgress({
           type: "progress",
           reqId: message.reqId,

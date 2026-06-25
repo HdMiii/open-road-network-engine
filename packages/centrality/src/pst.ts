@@ -1,4 +1,5 @@
 import type { CanonicalGraph, CentralityResult } from "../../core/src/types.ts";
+import { makeProgressTicker, type AnalysisProgressCallback } from "../../core/src/progress.ts";
 import {
   buildSegmentCenterAngularAdjacency,
   buildSegmentCenterAdjacency,
@@ -67,7 +68,7 @@ interface PstTraversalState {
 
 const NO_SOURCE_STATE = -1;
 
-export function pstAngularAnalysis(graph: CanonicalGraph, options: PstAngularOptions = {}): PstAngularAnalysis {
+export function pstAngularAnalysis(graph: CanonicalGraph, options: PstAngularOptions = {}, onProgress?: AnalysisProgressCallback): PstAngularAnalysis {
   const segments = buildPstSegments(graph);
   const intersections = buildPstIntersections(graph);
   const choice = new Float64Array(segments.length);
@@ -83,7 +84,9 @@ export function pstAngularAnalysis(graph: CanonicalGraph, options: PstAngularOpt
     throw new Error("anglePrecisionDegrees must be a positive number.");
   }
 
+  const tick = makeProgressTicker(segments.length, onProgress);
   for (let origin = 0; origin < segments.length; origin += 1) {
+    tick(origin);
     const states = Array.from({ length: segments.length * 2 }, createPstState);
     const root = processPstOrigin(
       origin,
@@ -123,8 +126,8 @@ export function pstAngularTotalDepth(graph: CanonicalGraph, options: PstAngularO
   };
 }
 
-export function pstAngularIntegration(graph: CanonicalGraph, options: PstAngularOptions = {}): CentralityResult {
-  const analysis = pstAngularAnalysis(graph, options);
+export function pstAngularIntegration(graph: CanonicalGraph, options: PstAngularOptions = {}, onProgress?: AnalysisProgressCallback): CentralityResult {
+  const analysis = pstAngularAnalysis(graph, options, onProgress);
   const values = new Float64Array(graph.segments.length);
   for (let i = 0; i < values.length; i += 1) values[i] = (analysis.nodeCounts[i] - 1) / (analysis.totalDepths[i] + 1);
   return {
@@ -159,9 +162,9 @@ export function pstAngularHillierIntegration(graph: CanonicalGraph, options: Pst
   };
 }
 
-export function pstAngularChoice(graph: CanonicalGraph, options: PstAngularOptions = {}): CentralityResult {
+export function pstAngularChoice(graph: CanonicalGraph, options: PstAngularOptions = {}, onProgress?: AnalysisProgressCallback): CentralityResult {
   return {
-    values: pstAngularAnalysis(graph, options).choice,
+    values: pstAngularAnalysis(graph, options, onProgress).choice,
     status: "compatible",
     method: pstAngularMethod("pst_angular_choice", options),
     notes: "PST Pstalgo AngularChoice over directed segment states with equal shortest angular paths split across state counts."

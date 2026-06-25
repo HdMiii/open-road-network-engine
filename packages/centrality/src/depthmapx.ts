@@ -1,5 +1,6 @@
 import type { CanonicalGraph, CentralityResult } from "../../core/src/types.ts";
 import { validateCanonicalGraph } from "../../core/src/validation.ts";
+import { makeProgressTicker, type AnalysisProgressCallback } from "../../core/src/progress.ts";
 
 interface DepthmapXDual {
   back: number[][];
@@ -16,11 +17,13 @@ interface DualSearchResult {
   order: number[];
 }
 
-export function depthmapXMetricIntegration(graph: CanonicalGraph, radius: number): CentralityResult {
+export function depthmapXMetricIntegration(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const dual = buildDepthmapXDual(graph);
   const values = new Float64Array(graph.segments.length);
+  const tick = makeProgressTicker(graph.segments.length, onProgress);
 
   for (let root = 0; root < graph.segments.length; root += 1) {
+    tick(root);
     if (!dual.valid[root]) {
       values[root] = Number.NaN;
       continue;
@@ -52,11 +55,13 @@ export function onDemandDepthmapXMetricIntegration(graph: CanonicalGraph, segmen
     : Number.NaN;
 }
 
-export function depthmapXMetricChoice(graph: CanonicalGraph, radius: number): CentralityResult {
+export function depthmapXMetricChoice(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const dual = buildDepthmapXDual(graph);
   const values = new Float64Array(graph.segments.length);
+  const tick = makeProgressTicker(graph.segments.length, onProgress);
 
   for (let root = 0; root < graph.segments.length; root += 1) {
+    tick(root);
     if (!dual.valid[root]) continue;
     searchDepthmapXMetricBuckets(dual, root, radius, values);
   }
