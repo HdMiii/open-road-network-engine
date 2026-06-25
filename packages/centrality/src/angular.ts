@@ -1,6 +1,7 @@
 import { MinPriorityQueue } from "../../core/src/priority-queue.ts";
 import type { CanonicalGraph, CentralityResult } from "../../core/src/types.ts";
 import { validateCanonicalGraph } from "../../core/src/validation.ts";
+import { makeProgressTicker, type AnalysisProgressCallback } from "../../core/src/progress.ts";
 
 const TULIP_BINS = 1024;
 const TULIP_SEMICIRCLE_BINS = TULIP_BINS / 2 + 1;
@@ -28,10 +29,12 @@ interface AngularSearchResult {
   reachedSegments: number[];
 }
 
-export function angularIntegration(graph: CanonicalGraph, radius: number, totalDepthOffset = 0): CentralityResult {
+export function angularIntegration(graph: CanonicalGraph, radius: number, totalDepthOffset = 0, onProgress?: AnalysisProgressCallback): CentralityResult {
   const angular = buildAngularGraph(graph);
   const values = new Float64Array(graph.segments.length);
+  const tick = makeProgressTicker(angular.nSegments, onProgress);
   for (let root = 0; root < angular.nSegments; root += 1) {
+    tick(root);
     if (!angular.valid[root]) {
       values[root] = Number.NaN;
       continue;
@@ -50,10 +53,12 @@ export function angularIntegration(graph: CanonicalGraph, radius: number, totalD
   };
 }
 
-export function angularNain(graph: CanonicalGraph, radius: number): CentralityResult {
+export function angularNain(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const angular = buildAngularGraph(graph);
   const values = new Float64Array(graph.segments.length);
+  const tick = makeProgressTicker(angular.nSegments, onProgress);
   for (let root = 0; root < angular.nSegments; root += 1) {
+    tick(root);
     if (!angular.valid[root]) {
       values[root] = Number.NaN;
       continue;
@@ -72,9 +77,9 @@ export function angularNain(graph: CanonicalGraph, radius: number): CentralityRe
   };
 }
 
-export function canonicalAngularChoice(graph: CanonicalGraph, radius: number): CentralityResult {
+export function canonicalAngularChoice(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const angular = buildAngularGraph(graph);
-  const values = angularChoiceValues(angular, radius);
+  const values = angularChoiceValues(angular, radius, onProgress);
   return {
     values,
     status: "compatible",
@@ -83,8 +88,8 @@ export function canonicalAngularChoice(graph: CanonicalGraph, radius: number): C
   };
 }
 
-export function angularChoice(graph: CanonicalGraph, radius: number): CentralityResult {
-  const result = canonicalAngularChoice(graph, radius);
+export function angularChoice(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
+  const result = canonicalAngularChoice(graph, radius, onProgress);
   return {
     ...result,
     method: `angular_choice_r${radius}`,
@@ -92,9 +97,9 @@ export function angularChoice(graph: CanonicalGraph, radius: number): Centrality
   };
 }
 
-export function depthmapXTulipAngularChoice(graph: CanonicalGraph, radius: number): CentralityResult {
+export function depthmapXTulipAngularChoice(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const angular = buildAngularGraph(graph);
-  const values = angularAuditTrailChoiceValues(angular, radius);
+  const values = angularAuditTrailChoiceValues(angular, radius, onProgress);
   return {
     values,
     status: "compatible",
@@ -103,11 +108,16 @@ export function depthmapXTulipAngularChoice(graph: CanonicalGraph, radius: numbe
   };
 }
 
-export function angularNach(graph: CanonicalGraph, radius: number): CentralityResult {
+export function angularNach(graph: CanonicalGraph, radius: number, onProgress?: AnalysisProgressCallback): CentralityResult {
   const angular = buildAngularGraph(graph);
+  // NACH runs two O(segments) passes (choice, then total depth). Report progress
+  // only on this second pass; the first pass falls under the host's indeterminate
+  // bar, then the determinate bar takes over here — keeping progress monotonic.
   const choice = angularChoiceValues(angular, radius);
   const values = new Float64Array(graph.segments.length);
+  const tick = makeProgressTicker(angular.nSegments, onProgress);
   for (let root = 0; root < angular.nSegments; root += 1) {
+    tick(root);
     if (!angular.valid[root]) {
       values[root] = Number.NaN;
       continue;
@@ -247,9 +257,11 @@ function searchAngularGraph(graph: AngularGraph, root: number, radius: number): 
   return { stateMetric, stateKey, segmentKey, previousState, reachedSegments };
 }
 
-function angularChoiceValues(graph: AngularGraph, radius: number): Float64Array {
+function angularChoiceValues(graph: AngularGraph, radius: number, onProgress?: AnalysisProgressCallback): Float64Array {
   const values = new Float64Array(graph.nSegments);
+  const tick = makeProgressTicker(graph.nSegments, onProgress);
   for (let root = 0; root < graph.nSegments; root += 1) {
+    tick(root);
     if (!graph.valid[root]) continue;
     const result = searchAngularGraph(graph, root, radius);
     for (const target of result.reachedSegments) {
@@ -266,10 +278,12 @@ function angularChoiceValues(graph: AngularGraph, radius: number): Float64Array 
   return values;
 }
 
-function angularAuditTrailChoiceValues(graph: AngularGraph, radius: number): Float64Array {
+function angularAuditTrailChoiceValues(graph: AngularGraph, radius: number, onProgress?: AnalysisProgressCallback): Float64Array {
   const stateChoice = new Float64Array(graph.nStates);
+  const tick = makeProgressTicker(graph.nSegments, onProgress);
 
   for (let root = 0; root < graph.nSegments; root += 1) {
+    tick(root);
     if (!graph.valid[root]) continue;
     const result = searchAngularGraph(graph, root, radius);
     const chosenStateBySegment = new Int32Array(graph.nSegments);
